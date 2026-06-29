@@ -73,9 +73,9 @@ int UART_Init(const char* portName) {
     struct termios options;
     if (tcgetattr(hSerial, &options) != 0) return 0;
 
-    // 设置波特率为 115200
-    cfsetispeed(&options, B115200);
-    cfsetospeed(&options, B115200);
+    // 设置波特率为 19200
+    cfsetispeed(&options, B19200);
+    cfsetospeed(&options, B19200);
 
     // 8N1 (8 数据位, 无校验位, 1 停止位)
     options.c_cflag &= ~PARENB;
@@ -140,19 +140,19 @@ void BMS_Net_Report(BMS_Data_t* data) {
     char json_buffer[128];
     char cmd_buffer[64];
 
-    // 动态拼接出 48 字节左右的标准电池 JSON
+    // 动态拼接出标准电池 JSON
     sprintf_s(json_buffer, "{\"volt\":%.2f,\"current\":%.1f,\"soc\":%d,\"temp\":%.1f}",
         data->volt, data->current, data->soc, data->temp);
 
-    int payload_len = strlen(json_buffer);
+    int payload_len = strlen(json_buffer)+1;
 
-    // 步骤 A：发送定长宣告指令（根据塔石手册改用 QMTPUBEX，且 msgid 必须 write 1）
+    // 发送定长宣告指令（根据塔石手册改用 QMTPUBEX，且 msgid 必须 write 1）
     sprintf_s(cmd_buffer, "AT+QMTPUBEX=0,1,0,0,\"bms/data\",%d\r\n", payload_len);
     UART_SendString(cmd_buffer);
 
     cross_sleep(500); // 延时模拟单片机检测到 '>' 提示符
 
-    // 步骤 B：盲发纯 JSON
+    // 盲发纯 JSON
     UART_SendRawData(json_buffer, payload_len);
 }
 
@@ -184,7 +184,7 @@ int main() {
     int bytesRead = 0;
 
     while (1) {
-        // 全天候监听串口接收缓冲区
+        // 监听串口接收缓冲区
 #ifdef _WIN32
         DWORD dwBytesRead;
         if (ReadFile(hSerial, rx_buffer, sizeof(rx_buffer) - 1, &dwBytesRead, NULL) && dwBytesRead > 0) {
@@ -196,9 +196,9 @@ int main() {
             rx_buffer[bytesRead] = '\0';
             printf("[The module reports a URC]: \n%s\n", rx_buffer);
 
-            // 核心脱壳条件判定：捕捉北向召测命令
-            if (strstr(rx_buffer, "+QMTRECV: 0,0,\"bms/control\"") != NULL &&
-                strstr(rx_buffer, "\"cmd\":\"read_all\"") != NULL) {
+            // 条件判定：捕捉北向召测命令
+            if (strstr(rx_buffer, "\"bms/control\"") != NULL &&
+                strstr(rx_buffer, "read_all") != NULL) {
 
                 printf("Control command detected! Triggering battery data simulation...\n");
 
@@ -227,14 +227,3 @@ int main() {
 #endif
     return 0;
     }
-
-// 运行程序: Ctrl + F5 或调试 >“开始执行(不调试)”菜单
-// 调试程序: F5 或调试 >“开始调试”菜单
-
-// 入门使用技巧: 
-//   1. 使用解决方案资源管理器窗口添加/管理文件
-//   2. 使用团队资源管理器窗口连接到源代码管理
-//   3. 使用输出窗口查看生成输出和其他消息
-//   4. 使用错误列表窗口查看错误
-//   5. 转到“项目”>“添加新项”以创建新的代码文件，或转到“项目”>“添加现有项”以将现有代码文件添加到项目
-//   6. 将来，若要再次打开此项目，请转到“文件”>“打开”>“项目”并选择 .sln 文件

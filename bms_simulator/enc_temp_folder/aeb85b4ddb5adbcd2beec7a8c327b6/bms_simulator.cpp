@@ -42,7 +42,7 @@ void cross_sleep(int ms) {
 // 1. 底层串口初始化（兼容 Windows / Linux）
 int UART_Init(const char* portName) {
 #ifdef _WIN32
-    // 显式调用 CreateFileA，强制使用 ANSI 编码，完美解决 LPCWSTR 兼容性报错
+    // 显式调用 CreateFileA，使用 ANSI 编码，解决 LPCWSTR 兼容性报错
     hSerial = CreateFileA(portName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (hSerial == INVALID_PORT) return 0;
 
@@ -73,9 +73,9 @@ int UART_Init(const char* portName) {
     struct termios options;
     if (tcgetattr(hSerial, &options) != 0) return 0;
 
-    // 设置波特率为 115200
-    cfsetispeed(&options, B115200);
-    cfsetospeed(&options, B115200);
+    // 设置波特率为 19200
+    cfsetispeed(&options, B19200);
+    cfsetospeed(&options, B19200);
 
     // 8N1 (8 数据位, 无校验位, 1 停止位)
     options.c_cflag &= ~PARENB;
@@ -140,11 +140,11 @@ void BMS_Net_Report(BMS_Data_t* data) {
     char json_buffer[128];
     char cmd_buffer[64];
 
-    // 动态拼接出 48 字节左右的标准电池 JSON
+    // 动态拼接出 49 字节左右的标准电池 JSON
     sprintf_s(json_buffer, "{\"volt\":%.2f,\"current\":%.1f,\"soc\":%d,\"temp\":%.1f}",
         data->volt, data->current, data->soc, data->temp);
 
-    int payload_len = strlen(json_buffer);
+    int payload_len = strlen(json_buffer)+1;
 
     // 步骤 A：发送定长宣告指令（根据塔石手册改用 QMTPUBEX，且 msgid 必须 write 1）
     sprintf_s(cmd_buffer, "AT+QMTPUBEX=0,1,0,0,\"bms/data\",%d\r\n", payload_len);
@@ -196,9 +196,9 @@ int main() {
             rx_buffer[bytesRead] = '\0';
             printf("[The module reports a URC]: \n%s\n", rx_buffer);
 
-            // 核心脱壳条件判定：捕捉北向召测命令
-            if (strstr(rx_buffer, "+QMTRECV: 0,0,\"bms/control\"") != NULL &&
-                strstr(rx_buffer, "\"cmd\":\"read_all\"") != NULL) {
+            // 条件判定：捕捉北向召测命令
+            if (strstr(rx_buffer, "\"bms/control\"") != NULL &&
+                strstr(rx_buffer, "read_all") != NULL) {
 
                 printf("Control command detected! Triggering battery data simulation...\n");
 

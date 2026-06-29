@@ -158,7 +158,7 @@ def show_web_page():
                 <p style="color: #7f8c8d; text-align: center; margin-bottom: 25px; font-size: 14px;">流式IoT网关 · 支持 MQTT 实时交互</p>
                 
                 <div style="text-align: center; margin-bottom: 25px; background: #fff3e0; padding: 15px; border-radius: 8px; border: 1px dashed #f39c12;">
-                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #d35400; font-weight: bold;">🎮 远程控制</p>
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #d35400; font-weight: bold;">远程控制</p>
                     <button id="ctrl-btn" onclick="triggerHardwareCollect()" style="background: #e67e22; color: white; border: none; padding: 10px 25px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.2s;">
                         实时获取最新数据
                     </button>
