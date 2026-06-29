@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import uvicorn
@@ -62,6 +63,12 @@ def show_web_page():
 @app.post("/")
 def receive_4g_data(data: BatteryData):
     global latest_battery_status
+
+    raw_body = await request.body()
+    raw_text = raw_body.decode('utf-8', errors='ignore')
+    print(f"\n🚨【硬件原生态报文绝对曝光】: --->{raw_text}<---")
+    print(f"📐【收到原始字节长度】: {len(raw_body)} 字节\n")
+
     latest_battery_status = {
         "volt": data.volt,
         "current": data.current,
