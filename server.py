@@ -29,15 +29,13 @@ def show_web_page():
             <meta charset="utf-8">
         </head>
         <body style="font-family: Arial; text-align: center; margin-top: 50px; background-color: #f4f6f9;">
-            <h1 style="color: #2c3e50;">🔋 Ethast BMS 远程监控大屏</h1>
+            <h1 style="color: #2c3e50;"> BMS 远程监控大屏</h1>
             <hr style="width: 50%; margin: 20px auto;">
             <div style="display: inline-block; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: left;">
-                <p style="font-size: 24px;">⚡ 当前电压: <strong style="color: #e74c3c;">{latest_battery_status['volt']} V</strong></p>
-                <p style="font-size: 24px;">🔌 当前电流: <strong style="color: #2980b9;">{latest_battery_status['current']} A</strong></p>
-                <p style="font-size: 24px;">🌡️ 电池温度: <strong style="color: #e67e22;">{latest_battery_status['temp']} °C</strong></p>
-                <p style="font-size: 24px;">📊 剩余电量: <strong style="color: #27ae60;">{latest_battery_status['soc']} %</strong></p>
-            </div>
-            <p style="color: #7f8c8d; margin-top: 30px;">数据每 10 秒由 4G 硬件板子自动无线刷新</p>
+                <p style="font-size: 24px;">当前电压: <strong style="color: #e74c3c;">{latest_battery_status['volt']} V</strong></p>
+                <p style="font-size: 24px;">当前电流: <strong style="color: #2980b9;">{latest_battery_status['current']} A</strong></p>
+                <p style="font-size: 24px;">电池温度: <strong style="color: #e67e22;">{latest_battery_status['temp']} °C</strong></p>
+                <p style="font-size: 24px;">剩余电量: <strong style="color: #27ae60;">{latest_battery_status['soc']} %</strong></p>
         </body>
     </html>
     """
