@@ -4,13 +4,13 @@ from contextlib import asynccontextmanager
 import uvicorn
 import json
 import re
-import threading  # 👈 引入线程锁，保障内存数据安全
+import threading  # 线程锁，保障内存数据安全
 import paho.mqtt.client as mqtt
 
 # ----------------- 核心数据区与线程安全机制 -----------------
 # 维护全局上下文单例
 latest_bms_status = {}
-data_lock = threading.Lock()  # 👈 读写互斥锁
+data_lock = threading.Lock()  # 读写互斥锁
 
 MQTT_BROKER = "127.0.0.1"
 MQTT_PORT = 1883
@@ -57,10 +57,6 @@ mqtt_client.on_message = on_message
 # ----------------- FastAPI 生命周期上下文管理 -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    替代已废弃的 @app.on_event("startup")
-    精确控制网络高架桥的生命周期，防止服务器重启时端口死锁
-    """
     try:
         mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
         mqtt_client.loop_start()
@@ -70,7 +66,7 @@ async def lifespan(app: FastAPI):
     
     yield  # 服务器保持运行
     
-    # 善后阶段：优雅断开长连接
+    # 断开长连接
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
     print("[INFO] MQTT background thread safely terminated.")
@@ -150,7 +146,7 @@ def show_web_page():
                             }, 1000);
                         })
                         .catch(err => {
-                            btn.innerText = "❌ 下发失败，重试";
+                            btn.innerText = "❌ 下发失败，请重试";
                             btn.style.background = "#e74c3c";
                         });
                 }
@@ -159,10 +155,10 @@ def show_web_page():
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 40px 20px;">
             <div style="max-width: 650px; margin: 0 auto; background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06);">
                 <h1 style="color: #2c3e50; text-align: center; margin-bottom: 5px; font-size: 28px;">🔋 BMS 数据远程检测平台</h1>
-                <p style="color: #7f8c8d; text-align: center; margin-bottom: 25px; font-size: 14px;">流式物联网网关 · 支持 MQTT 双向实时交互</p>
+                <p style="color: #7f8c8d; text-align: center; margin-bottom: 25px; font-size: 14px;">流式IoT网关 · 支持 MQTT 实时交互</p>
                 
                 <div style="text-align: center; margin-bottom: 25px; background: #fff3e0; padding: 15px; border-radius: 8px; border: 1px dashed #f39c12;">
-                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #d35400; font-weight: bold;">🎮 远程双向控制</p>
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #d35400; font-weight: bold;">🎮 远程控制</p>
                     <button id="ctrl-btn" onclick="triggerHardwareCollect()" style="background: #e67e22; color: white; border: none; padding: 10px 25px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.2s;">
                         实时获取最新数据
                     </button>
@@ -178,7 +174,7 @@ def show_web_page():
     """
     return html_content
 
-# 💡 保留原有的南向 HTTP 接收路径，实现双栈过渡方案
+# 💡 保留原有的南向 HTTP 接收路径，双栈过渡方案
 @app.post("/data/upload")
 async def receive_bms_data_via_http(request: Request):
     global latest_bms_status
