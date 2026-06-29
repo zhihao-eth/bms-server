@@ -62,21 +62,30 @@ def show_web_page():
 
 @app.post("/")
 def receive_4g_data(data: BatteryData):
-    global latest_battery_status
+    async def receive_4g_data(request: Request):  # 👈 改成直接抓取原始请求
+        global latest_battery_status
+        
+        # 1. 强行抓取模组发过来的纯文本原始遗迹
+        raw_body = await request.body()
+        raw_text = raw_body.decode('utf-8', errors='ignore')
+        print(f"\n🚨【硬件原生态报文绝对曝光】: --->{raw_text}<---")
+        print(f"📐【收到原始字节长度】: {len(raw_body)} 字节\n")
 
-    raw_body = await request.body()
-    raw_text = raw_body.decode('utf-8', errors='ignore')
-    print(f"\n🚨【硬件原生态报文绝对曝光】: --->{raw_text}<---")
-    print(f"📐【收到原始字节长度】: {len(raw_body)} 字节\n")
-
-    latest_battery_status = {
-        "volt": data.volt,
-        "current": data.current,
-        "soc": data.soc,
-        "temp": data.temp
-    }
-    print(f"【FastAPI 网页端收到数据】: {latest_battery_status}")
-    return {"status": "success", "msg": "Ethast Server Received!"}
+        try:
+            # 2. 尝试手动解析
+            data = await request.json()
+            latest_battery_status = {
+                "volt": float(data.get("volt", 0.0)),
+                "current": float(data.get("current", 0.0)),
+                "soc": int(data.get("soc", 0)),
+                "temp": float(data.get("temp", 0.0))
+            }
+            print(f"✅【FastAPI 完美解析成功】: {latest_battery_status}")
+            return {"status": "success", "msg": "Ethast Server Received!"}
+        except Exception as e:
+            print(f"❌【解析失败】原因: {e}")
+            # 如果解析 JSON 失败，返回 200 宽容通过，防止模组报错，方便我们看打印
+            return {"status": "raw_received", "msg": "Format error but raw logged"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)
