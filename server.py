@@ -64,7 +64,7 @@ def show_web_page():
     """
     return html_content
 
-@app.post("/")
+@app.post("/data/upload")
 async def receive_bms_data(request: Request):
     global latest_bms_status
     
