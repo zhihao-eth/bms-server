@@ -1,37 +1,71 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 import uvicorn
 import json
 import re
 import threading
+import time
 import paho.mqtt.client as mqtt
 
-# ----------------- 核心数据区与线程安全机制 -----------------
+# ============================================================
+# MQTT-only BMS + GPS Gateway
+# 数据链路：
+# CT511N/MCU -> MQTT publish bms/data -> FastAPI订阅 -> 网页显示
+#
+# 注意：
+# 1. 本代码不再使用 HTTP POST 上传数据。
+# 2. 服务器上必须有 MQTT Broker，例如 Mosquitto。
+# 3. CT511N 模块要连接公网 Broker 地址：8.148.13.100:1883
+# 4. 本 FastAPI 程序如果和 Broker 在同一台服务器，MQTT_BROKER 用 127.0.0.1 即可。
+# ============================================================
+
+# ----------------- 数据区 -----------------
 latest_bms_status = {}
 latest_gps_status = {
-    "fix_status": "0",        # 0: 未定位成功, 1: 定位成功
-    "longitude": "0.000000",  # 经度
-    "latitude": "0.000000",   # 纬度
-    "high": "0.000",          # 高度/海拔
-    "speed": "0.000",         # 速度
-    "satellites": "0"         # 参与定位卫星数
+    "fix_status": "0",
+    "longitude": "0.000000",
+    "latitude": "0.000000",
+    "high": "0.000",
+    "speed": "0.000",
+    "satellites": "0"
 }
+latest_mqtt_status = {
+    "connected": False,
+    "last_topic": "",
+    "last_payload": "",
+    "last_update_time": ""
+}
+
 data_lock = threading.Lock()
 
+# ----------------- MQTT 配置 -----------------
+# FastAPI 和 MQTT Broker 在同一台云服务器时，用 127.0.0.1。
+# CT511N 模块连接时，应该连接公网 IP：8.148.13.100:1883。
 MQTT_BROKER = "127.0.0.1"
 MQTT_PORT = 1883
+
+# 模块/MCU 上传数据到这个 topic
 TOPIC_SUB_DATA = "bms/data"
+
+# 网页按钮下发控制命令到这个 topic
+# 只有当 MCU/串口桥接程序订阅这个 topic 并转成 AT 指令时，它才会真正控制 CT511N。
 TOPIC_PUB_CTRL = "bms/control"
 
-# ----------------- GPS / BMS 解析核心逻辑 -----------------
+# 可选：如果你的 Broker 设置了用户名密码，填这里；没有就保持 None
+MQTT_USERNAME = None
+MQTT_PASSWORD = None
+
+
+# ----------------- 解析函数 -----------------
 def safe_str(value, default="0"):
     if value is None:
         return default
     return str(value)
 
+
 def nmea_to_dec(nmea_val, direction):
-    """将 NMEA 度分格式转换为十进制度数，例如 3030.967227 -> 30.516120"""
+    """NMEA 度分格式转十进制度数，例如 3030.967227 -> 30.516120"""
     if not nmea_val or nmea_val.strip() == "":
         return "0.000000"
     try:
@@ -40,24 +74,19 @@ def nmea_to_dec(nmea_val, direction):
             return "0.000000"
         degrees = float(nmea_val[:dot - 2])
         minutes = float(nmea_val[dot - 2:])
-        dec = degrees + (minutes / 60.0)
+        dec = degrees + minutes / 60.0
         if direction in ["S", "W"]:
             dec = -dec
         return f"{dec:.6f}"
     except Exception:
         return "0.000000"
 
+
 def update_gps_from_dict(gps_obj: dict) -> bool:
-    """
-    兼容 JSON GPS 格式：
-    1) {"type":"gps","fix_status":1,"longitude":113.8,"latitude":22.6,...}
-    2) {"type":"telemetry","gps":{"fix_status":1,"longitude":113.8,"latitude":22.6,...}}
-    3) {"gps":{"lng":113.8,"lat":22.6,"altitude":12.1,...}}
-    """
+    """兼容 JSON GPS: longitude/latitude 或 lng/lat"""
     if not isinstance(gps_obj, dict):
         return False
 
-    # 兼容 lng/lat/altitude 等别名
     fix_status = gps_obj.get("fix_status", gps_obj.get("fix", gps_obj.get("gps_fix", None)))
     longitude = gps_obj.get("longitude", gps_obj.get("lng", gps_obj.get("lon", None)))
     latitude = gps_obj.get("latitude", gps_obj.get("lat", None))
@@ -65,13 +94,12 @@ def update_gps_from_dict(gps_obj: dict) -> bool:
     speed = gps_obj.get("speed", None)
     satellites = gps_obj.get("satellites", gps_obj.get("satellite", gps_obj.get("sats", None)))
 
-    # 至少要有 fix 或经纬度之一，否则不认为是 GPS 数据
     if fix_status is None and longitude is None and latitude is None:
         return False
 
     with data_lock:
         if fix_status is not None:
-            latest_gps_status["fix_status"] = safe_str(int(fix_status) if isinstance(fix_status, bool) else fix_status, "0")
+            latest_gps_status["fix_status"] = safe_str(fix_status, "0")
         if longitude is not None:
             latest_gps_status["longitude"] = safe_str(longitude, "0.000000")
         if latitude is not None:
@@ -85,14 +113,13 @@ def update_gps_from_dict(gps_obj: dict) -> bool:
 
     return True
 
+
 def handle_json_payload(obj: dict) -> bool:
     """
-    兼容两种 JSON 上传：
-    A. 统一 telemetry:
-       {"type":"telemetry","bms":{...},"gps":{...}}
-    B. 分开上传:
-       {"type":"gps",...}
-       {"type":"bms",...}
+    支持：
+    1. {"type":"bms","voltage":52.3,"current":1.8,"soc":76,"temperature":31.5}
+    2. {"type":"gps","fix_status":1,"longitude":113.8,"latitude":22.6}
+    3. {"type":"telemetry","bms":{...},"gps":{...}}
     """
     global latest_bms_status
 
@@ -102,30 +129,30 @@ def handle_json_payload(obj: dict) -> bool:
     handled = False
     msg_type = str(obj.get("type", "")).lower()
 
-    # 1. 嵌套 GPS: {"gps": {...}}
     if isinstance(obj.get("gps"), dict):
         if update_gps_from_dict(obj["gps"]):
             handled = True
 
-    # 2. 平铺 GPS: {"type":"gps", ...}
     if msg_type == "gps" or any(k in obj for k in ["longitude", "latitude", "lng", "lat", "gps_fix"]):
         if update_gps_from_dict(obj):
             handled = True
 
-    # 3. 嵌套 BMS: {"bms": {...}}
     if isinstance(obj.get("bms"), dict):
         with data_lock:
             latest_bms_status = obj["bms"]
         handled = True
 
-    # 4. 平铺 BMS: {"type":"bms", ...}
     if msg_type == "bms":
         bms_obj = {k: v for k, v in obj.items() if k != "type"}
         with data_lock:
             latest_bms_status = bms_obj
         handled = True
 
-    # 5. 没有 type 但也不是 GPS，则默认当 BMS
+    # telemetry 里除了 bms/gps 外的 device_id/timestamp 不放进左侧 BMS 面板，避免太乱
+    if msg_type == "telemetry":
+        handled = True
+
+    # 没有 type，也不是 GPS，则默认当 BMS
     if not handled:
         with data_lock:
             latest_bms_status = obj
@@ -133,12 +160,13 @@ def handle_json_payload(obj: dict) -> bool:
 
     return handled
 
-def parse_gnss_data(raw_text: str):
+
+def parse_gnss_data(raw_text: str) -> bool:
     """
-    兼容三类 GPS 数据：
-    1. CT511N 扩展定位结果: +GPSSTEX / +GPS5TEX
-    2. NMEA: $GNRMC / $GNGGA
-    3. JSON: {"type":"gps",...} 或 {"type":"telemetry","gps":{...}}
+    兼容：
+    1. +GPSSTEX / +GPS5TEX
+    2. $GNRMC / $GNGGA
+    3. JSON GPS / telemetry
     """
     if not raw_text:
         return False
@@ -146,7 +174,7 @@ def parse_gnss_data(raw_text: str):
     raw_text = raw_text.strip()
     has_parsed = False
 
-    # 0. 优先尝试 JSON，支持嵌套 JSON
+    # JSON
     try:
         obj = json.loads(raw_text)
         if isinstance(obj, dict):
@@ -154,11 +182,8 @@ def parse_gnss_data(raw_text: str):
     except json.JSONDecodeError:
         pass
 
-    # 1. 解析 CT511N +GPSSTEX / +GPS5TEX
-    # 示例：
+    # CT511N 扩展 GPS
     # +GPSSTEX: 1, 1, 113.831385, 12.166000, 22.606304, 0.013000, 15, 14
-    # 字段：
-    # 1 fix_status, 2 module_status, 3 longitude, 4 high, 5 latitude, 6 speed, 7 visible sats, 8 used sats
     if "+GPS" in raw_text:
         match = re.search(
             r"\+GPS(?:5|S)TEX[:：]\s*"
@@ -176,12 +201,11 @@ def parse_gnss_data(raw_text: str):
                 latest_gps_status["satellites"] = match.group(8)
             has_parsed = True
 
-    # 2. 解析 NMEA $GNRMC，主要拿经纬度和速度
-    # $GNRMC,024603.00,A,2236.3782,N,11349.8831,E,0.013,,...
+    # NMEA RMC
     if "$GNRMC" in raw_text:
         parts = raw_text.split(",")
         if len(parts) >= 8:
-            status = parts[2]  # A=有效定位, V=无效定位
+            status = parts[2]
             with data_lock:
                 if status == "A":
                     latest_gps_status["fix_status"] = "1"
@@ -189,16 +213,15 @@ def parse_gnss_data(raw_text: str):
                     latest_gps_status["longitude"] = nmea_to_dec(parts[5], parts[6])
                     try:
                         knots = float(parts[7]) if parts[7] else 0.0
-                        latest_gps_status["speed"] = f"{(knots * 0.514444):.3f}"
+                        latest_gps_status["speed"] = f"{knots * 0.514444:.3f}"
                     except Exception:
                         latest_gps_status["speed"] = "0.000"
                 elif status == "V":
                     latest_gps_status["fix_status"] = "0"
             has_parsed = True
 
-    # 3. 解析 NMEA $GNGGA，主要拿定位质量、卫星数和高度
-    # $GNGGA,024603.00,2236.3782,N,11349.8831,E,1,14,0.8,12.1,M,...
-    if "$GNGGA" in raw_text:
+    # NMEA GGA
+    if "$GNGGA" in raw_text or "$GPGGA" in raw_text:
         parts = raw_text.split(",")
         if len(parts) >= 10:
             fix_quality = parts[6] if len(parts) > 6 else "0"
@@ -206,17 +229,11 @@ def parse_gnss_data(raw_text: str):
             altitude = parts[9] if len(parts) > 9 else ""
 
             with data_lock:
-                if fix_quality and fix_quality != "0":
-                    latest_gps_status["fix_status"] = "1"
-                else:
-                    latest_gps_status["fix_status"] = "0"
-
+                latest_gps_status["fix_status"] = "1" if fix_quality and fix_quality != "0" else "0"
                 if satellites:
                     latest_gps_status["satellites"] = satellites
                 if altitude:
                     latest_gps_status["high"] = altitude
-
-                # 如果 GGA 里有经纬度，也顺手更新
                 if len(parts) >= 6 and parts[2] and parts[4]:
                     latest_gps_status["latitude"] = nmea_to_dec(parts[2], parts[3])
                     latest_gps_status["longitude"] = nmea_to_dec(parts[4], parts[5])
@@ -225,16 +242,15 @@ def parse_gnss_data(raw_text: str):
 
     return has_parsed
 
-def process_incoming_text(raw_text: str):
-    """统一处理 HTTP / MQTT 收到的数据。支持多行、原始 GPS、JSON。"""
-    global latest_bms_status
 
+def process_incoming_text(raw_text: str):
+    """统一处理 MQTT 收到的数据。支持多行、原始 GPS、JSON。"""
     if not raw_text:
         return
 
     raw_text = raw_text.strip()
 
-    # 1. 整体 JSON 优先，避免 nested JSON 被正则截断
+    # 先整体尝试 JSON，避免 telemetry 嵌套 JSON 被逐行/正则破坏
     try:
         obj = json.loads(raw_text)
         if isinstance(obj, dict):
@@ -243,54 +259,67 @@ def process_incoming_text(raw_text: str):
     except json.JSONDecodeError:
         pass
 
-    # 2. 多行逐行处理
+    # 再逐行处理原始 GPS / NMEA
     for line in raw_text.splitlines():
         line = line.strip()
         if not line:
             continue
+        parse_gnss_data(line)
 
-        if parse_gnss_data(line):
-            continue
 
-        # 3. 兼容单行简单 JSON
-        try:
-            obj = json.loads(line)
-            if isinstance(obj, dict):
-                handle_json_payload(obj)
-                continue
-        except json.JSONDecodeError:
-            pass
-
-        # 4. 兼容普通 BMS key=value 或其他原始文本，可按需扩展
-        # 当前忽略无法识别的行
-
-# ----------------- MQTT 协议栈回调驱动 -----------------
+# ----------------- MQTT 回调 -----------------
 def on_connect(client, userdata, flags, rc):
+    with data_lock:
+        latest_mqtt_status["connected"] = (rc == 0)
+
     if rc == 0:
-        print(f"[INFO] MQTT Connected to {MQTT_BROKER}")
+        print(f"[INFO] MQTT connected to {MQTT_BROKER}:{MQTT_PORT}")
         client.subscribe(TOPIC_SUB_DATA, qos=0)
+        print(f"[INFO] Subscribed topic: {TOPIC_SUB_DATA}")
     else:
-        print(f"[ERROR] MQTT connection failed: {rc}")
+        print(f"[ERROR] MQTT connection failed: rc={rc}")
+
+
+def on_disconnect(client, userdata, rc):
+    with data_lock:
+        latest_mqtt_status["connected"] = False
+    print(f"[WARN] MQTT disconnected: rc={rc}")
+
 
 def on_message(client, userdata, msg):
     try:
         raw_text = msg.payload.decode("utf-8", errors="ignore").strip()
+
+        with data_lock:
+            latest_mqtt_status["last_topic"] = msg.topic
+            latest_mqtt_status["last_payload"] = raw_text[:500]
+            latest_mqtt_status["last_update_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        print(f"[MQTT] {msg.topic}: {raw_text}")
         process_incoming_text(raw_text)
+
     except Exception as e:
         print(f"[ERROR] MQTT message callback error: {str(e)}")
 
+
 mqtt_client = mqtt.Client(client_id="BMS_Gateway_Server")
+if MQTT_USERNAME:
+    mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
 mqtt_client.on_connect = on_connect
+mqtt_client.on_disconnect = on_disconnect
 mqtt_client.on_message = on_message
 
+
+# ----------------- FastAPI -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
         mqtt_client.loop_start()
     except Exception as e:
-        # 没有本机 MQTT broker 时，网页和 HTTP 上传仍然可用
-        print(f"[WARN] MQTT startup failed, HTTP mode still works: {str(e)}")
+        print(f"[CRITICAL] MQTT startup failed: {str(e)}")
+        print("[CRITICAL] Please check whether Mosquitto/MQTT broker is running.")
 
     yield
 
@@ -300,33 +329,34 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="BMS Gateway Solution", lifespan=lifespan)
+
+app = FastAPI(title="BMS MQTT Gateway Solution", lifespan=lifespan)
+
 
 @app.get("/api/status")
 def get_latest_status():
     with data_lock:
-        return {"bms": latest_bms_status, "gps": latest_gps_status}
+        return {
+            "bms": latest_bms_status,
+            "gps": latest_gps_status,
+            "mqtt": latest_mqtt_status
+        }
+
 
 @app.post("/api/control")
 def send_control_cmd():
     """
-    注意：这个接口只会向本机 MQTT 发控制消息。
-    如果没有本地 MCU/串口桥接程序订阅 bms/control 并写入 CT511N UART，
-    它不会真的让 CT511N 执行 AT+GPSSTEX。
+    网页按钮发布控制命令到 MQTT。
+    注意：只有 MCU/串口桥接程序订阅 bms/control，并把命令写入 CT511N UART，
+    CT511N 才会真的执行 AT+GPSSTEX。
     """
     try:
-        mqtt_client.publish(TOPIC_PUB_CTRL, json.dumps({"cmd": "read_all"}), qos=0)
-        mqtt_client.publish(TOPIC_PUB_CTRL, "AT+GPSSTEX", qos=0)
-        return {"status": "success", "message": "control command published to MQTT"}
+        payload = "AT+GPSSTEX"
+        mqtt_client.publish(TOPIC_PUB_CTRL, payload, qos=0)
+        return {"status": "success", "topic": TOPIC_PUB_CTRL, "payload": payload}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
-@app.post("/data/upload")
-async def receive_data_via_http(request: Request):
-    raw_body = await request.body()
-    raw_text = raw_body.decode("utf-8", errors="ignore").strip()
-    process_incoming_text(raw_text)
-    return {"status": "success", "received": raw_text[:200]}
 
 @app.get("/", response_class=HTMLResponse)
 def show_web_page():
@@ -334,15 +364,9 @@ def show_web_page():
 <!DOCTYPE html>
 <html>
 <head>
-    <title>BMS 远程监控与实时定位总线</title>
+    <title>BMS MQTT 远程监控与实时定位</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <!-- 注意：
-         1. 如果地图不显示，优先检查浏览器 F12 Console。
-         2. 高德 Key 可能有域名白名单、Referer、服务权限限制。
-         3. 境外网络/公司网络可能加载不了 webapi.amap.com。
-    -->
     <script src="https://webapi.amap.com/maps?v=2.0&key=7403b2df7e7a57a5e0034df12a9eb763"></script>
 
     <style>
@@ -374,9 +398,10 @@ def show_web_page():
             padding-bottom: 12px;
         }
         h1 { font-size: 20px; margin: 0; font-weight: 600; }
+        .subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
         .grid-layout {
             display: grid;
-            grid-template-columns: 280px 1fr 320px;
+            grid-template-columns: 280px 1fr 340px;
             gap: 20px;
         }
         @media (max-width: 1024px) {
@@ -409,7 +434,13 @@ def show_web_page():
             margin-bottom: 10px;
         }
         .metric-label { font-size: 11px; color: var(--text-secondary); }
-        .metric-value { font-size: 16px; font-weight: 700; font-family: monospace; margin-top: 2px; }
+        .metric-value {
+            font-size: 16px;
+            font-weight: 700;
+            font-family: monospace;
+            margin-top: 2px;
+            word-break: break-word;
+        }
         #map-container {
             width: 100%;
             height: 550px;
@@ -426,11 +457,12 @@ def show_web_page():
         .gps-row {
             display: flex;
             justify-content: space-between;
+            gap: 10px;
             padding: 8px 0;
             border-bottom: 1px solid #f1f5f9;
             font-size: 13px;
         }
-        .gps-val { font-family: monospace; font-weight: 600; }
+        .gps-val { font-family: monospace; font-weight: 600; text-align: right; }
         .badge {
             font-size: 11px;
             padding: 2px 6px;
@@ -455,6 +487,12 @@ def show_web_page():
             color: #991b1b;
             display: none;
         }
+        .small-text {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            word-break: break-word;
+        }
     </style>
 </head>
 
@@ -462,17 +500,17 @@ def show_web_page():
     <div class="dashboard">
         <header>
             <div>
-                <h1>BMS 远程监控与实时定位看板</h1>
-                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">LTE Cat.1 双栈网关总线</div>
+                <h1>BMS MQTT 远程监控与实时定位看板</h1>
+                <div class="subtitle">数据来源：MQTT topic bms/data</div>
             </div>
-            <button onclick="triggerFetch()">手动查询定位</button>
+            <button onclick="triggerFetch()">MQTT 下发 AT+GPSSTEX</button>
         </header>
 
         <div class="grid-layout">
             <div class="card">
                 <div class="card-title">🔋 电芯状态指标</div>
                 <div id="bms-grid" style="flex: 1; overflow-y: auto;">
-                    <div style="color:var(--text-secondary); font-size:13px;">📡 等待电芯数据...</div>
+                    <div style="color:var(--text-secondary); font-size:13px;">📡 等待 MQTT 电芯数据...</div>
                 </div>
             </div>
 
@@ -484,7 +522,7 @@ def show_web_page():
             <div class="card">
                 <div class="card-title">
                     <span>📍 定位遥测元数据</span>
-                    <span id="gps-badge" class="badge bg-warn">正在搜星</span>
+                    <span id="gps-badge" class="badge bg-warn">未定位</span>
                 </div>
                 <div>
                     <div class="gps-row"><span>经度 (Lng)</span><span id="val-lng" class="gps-val">0.000000</span></div>
@@ -492,6 +530,15 @@ def show_web_page():
                     <div class="gps-row"><span>海拔高度</span><span id="val-high" class="gps-val">0.000 m</span></div>
                     <div class="gps-row"><span>行驶速度</span><span id="val-speed" class="gps-val">0.000 m/s</span></div>
                     <div class="gps-row"><span>有效卫星数</span><span id="val-sats" class="gps-val">0</span></div>
+                </div>
+
+                <div class="card-title" style="margin-top: 20px;">📡 MQTT 状态</div>
+                <div class="small-text">
+                    <div>连接状态：<span id="mqtt-connected">unknown</span></div>
+                    <div>最后 Topic：<span id="mqtt-topic">-</span></div>
+                    <div>最后时间：<span id="mqtt-time">-</span></div>
+                    <div>最后 Payload：</div>
+                    <div id="mqtt-payload" style="font-family: monospace; margin-top: 4px;">-</div>
                 </div>
             </div>
         </div>
@@ -506,19 +553,17 @@ def show_web_page():
             const err = document.getElementById('map-error');
             err.style.display = 'block';
             err.innerText = message;
-            document.getElementById('gps-badge').className = 'badge bg-error';
+            document.getElementById('map-container').innerText = '地图加载失败';
         }
 
         function initMap() {
             if (typeof AMap === 'undefined') {
-                showMapError('地图加载失败：AMap 未定义。请检查高德 Key、域名白名单、HTTPS/HTTP、浏览器 Console 或网络是否能访问 webapi.amap.com。');
-                document.getElementById('map-container').innerText = '地图加载失败';
+                showMapError('AMap 未定义。请检查高德 Key、域名白名单、网络是否能访问 webapi.amap.com。');
                 return;
             }
 
             try {
                 document.getElementById('map-container').innerHTML = '';
-
                 map = new AMap.Map('map-container', {
                     zoom: 15,
                     center: [114.394223, 30.516120],
@@ -534,15 +579,14 @@ def show_web_page():
                 mapReady = true;
             } catch (e) {
                 showMapError('地图初始化失败：' + e.message);
-                document.getElementById('map-container').innerText = '地图初始化失败';
             }
         }
 
-        function renderBmsObject(obj, prefix = '') {
+        function renderObject(obj, prefix = '') {
             let html = '';
             for (const key in obj) {
                 if (typeof obj[key] === 'object' && obj[key] !== null) {
-                    html += renderBmsObject(obj[key], prefix + key + '.');
+                    html += renderObject(obj[key], prefix + key + '.');
                 } else {
                     html += `<div class="metric-item">
                                 <div class="metric-label">${(prefix + key).toUpperCase()}</div>
@@ -559,7 +603,7 @@ def show_web_page():
                 .then(data => {
                     const bmsContainer = document.getElementById('bms-grid');
                     if (data.bms && Object.keys(data.bms).length > 0) {
-                        bmsContainer.innerHTML = renderBmsObject(data.bms);
+                        bmsContainer.innerHTML = renderObject(data.bms);
                     }
 
                     const gps = data.gps || {};
@@ -574,24 +618,28 @@ def show_web_page():
                     document.getElementById('val-speed').innerText = (gps.speed || '0.000') + ' m/s';
                     document.getElementById('val-sats').innerText = gps.satellites || '0';
 
+                    const mqtt = data.mqtt || {};
+                    document.getElementById('mqtt-connected').innerText = mqtt.connected ? 'connected' : 'disconnected';
+                    document.getElementById('mqtt-connected').style.color = mqtt.connected ? '#065f46' : '#991b1b';
+                    document.getElementById('mqtt-topic').innerText = mqtt.last_topic || '-';
+                    document.getElementById('mqtt-time').innerText = mqtt.last_update_time || '-';
+                    document.getElementById('mqtt-payload').innerText = mqtt.last_payload || '-';
+
                     if (isFixed && mapReady && marker) {
                         const rawLng = parseFloat(gps.longitude);
                         const rawLat = parseFloat(gps.latitude);
 
-                        // 不能只允许 >0，否则西经/南纬会显示不了。这里改为合法经纬度范围。
                         if (!isNaN(rawLng) && !isNaN(rawLat) &&
                             rawLng >= -180 && rawLng <= 180 &&
                             rawLat >= -90 && rawLat <= 90 &&
                             !(rawLng === 0 && rawLat === 0)) {
 
-                            // 高德地图在中国大陆需要 GPS/WGS84 -> GCJ02 坐标转换。
                             AMap.convertFrom([rawLng, rawLat], 'gps', function (status, result) {
                                 if (status === 'complete' && result && result.locations && result.locations.length > 0) {
                                     const correctedLngLat = result.locations[0];
                                     marker.setPosition(correctedLngLat);
                                     map.panTo(correctedLngLat);
                                 } else {
-                                    // 如果转换失败，就直接用原始坐标，至少能显示 marker。
                                     const lnglat = [rawLng, rawLat];
                                     marker.setPosition(lnglat);
                                     map.panTo(lnglat);
@@ -600,9 +648,7 @@ def show_web_page():
                         }
                     }
                 })
-                .catch(err => {
-                    console.error('updateDashboard error:', err);
-                });
+                .catch(err => console.error('updateDashboard error:', err));
         }
 
         function triggerFetch() {
@@ -622,6 +668,7 @@ def show_web_page():
 </html>
     """
     return html_content
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)
