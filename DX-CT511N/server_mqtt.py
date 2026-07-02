@@ -10,12 +10,12 @@ import paho.mqtt.client as mqtt
 # ----------------- 核心数据区与线程安全机制 -----------------
 latest_bms_status = {}
 latest_gps_status = {
-    "fix_status": "0",       # 0:未定位成功, 1:定位成功 [cite: 800]
-    "longitude": "0.000000", # 经度 [cite: 800]
-    "latitude": "0.000000",  # 纬度 [cite: 800]
-    "high": "0.000",         # 高度 [cite: 800]
-    "speed": "0.000",        # 速度 [cite: 800]
-    "satellites": "0"        # 参与定位卫星数 [cite: 800]
+    "fix_status": "0",       # 0:未定位成功, 1:定位成功
+    "longitude": "0.000000", # 经度
+    "latitude": "0.000000",  # 纬度
+    "high": "0.000",         # 高度
+    "speed": "0.000",        # 速度
+    "satellites": "0"        # 参与定位卫星数
 }
 data_lock = threading.Lock()  
 
@@ -24,24 +24,74 @@ MQTT_PORT = 1883
 TOPIC_SUB_DATA = "bms/data"
 TOPIC_PUB_CTRL = "bms/control"
 
-# ----------------- DX-CT511N GNSS 报文解析器 -----------------
-def parse_gnss_sentence(raw_text: str):
+# ----------------- 空间定位数据解析核心逻辑 -----------------
+def nmea_to_dec(nmea_val, direction):
+    """将 NMEA 的度分格式 (如 3030.967227) 转换为标准的十进制度数 (如 30.516120)"""
+    if not nmea_val or nmea_val.strip() == "": 
+        return "0.000000"
+    try:
+        dot = nmea_val.find('.')
+        if dot == -1: return "0.000000"
+        degrees = float(nmea_val[:dot-2])
+        minutes = float(nmea_val[dot-2:])
+        dec = degrees + (minutes / 60.0)
+        if direction in ['S', 'W']: 
+            dec = -dec
+        return f"{dec:.6f}"
+    except Exception:
+        return "0.000000"
+
+def parse_gnss_data(raw_text: str):
     """
-    根据大夏龙雀 AT 串口应用指导 5.7.4 节规范解析经纬度坐标 [cite: 800]
-    支持形式如：+GPS5TEX: 1, 1, 113.831385, 12.166000, 22.606304... [cite: 812]
+    统一空间定位解析流：
+    同时兼容大夏龙雀格式 (+GPS5TEX) 以及你刚才发出来的原始 NMEA 串行流 ($GNRMC / $GNGGA)
     """
     global latest_gps_status
-    match = re.search(r'\+GPS(?:5|S)TEX:\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+)', raw_text)
-    if match:
-        with data_lock:
-            latest_gps_status["fix_status"] = match.group(1)
-            latest_gps_status["longitude"] = match.group(3)
-            latest_gps_status["high"] = match.group(4)
-            latest_gps_status["latitude"] = match.group(5)
-            latest_gps_status["speed"] = match.group(6)
-            latest_gps_status["satellites"] = match.group(8)
-        return True
-    return False
+    has_parsed = False
+
+    # 1. 拦截并解析大夏龙雀专用的 +GPS5TEX 格式
+    if "+GPS" in raw_text:
+        match = re.search(r'\+GPS(?:5|S)TEX:\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+),\s*([\d\.]+)', raw_text)
+        if match:
+            with data_lock:
+                latest_gps_status["fix_status"] = match.group(1)
+                latest_gps_status["longitude"] = match.group(3)
+                latest_gps_status["high"] = match.group(4)
+                latest_gps_status["latitude"] = match.group(5)
+                latest_gps_status["speed"] = match.group(6)
+                latest_gps_status["satellites"] = match.group(8)
+            has_parsed = True
+
+    # 2. 拦截并解析你发送过来的原始 $GNRMC 数据
+    if "$GNRMC" in raw_text:
+        parts = raw_text.split(',')
+        if len(parts) >= 7:
+            status = parts[2]  # 'A'=有效定位, 'V'=未定位
+            with data_lock:
+                if status == 'A':
+                    latest_gps_status["fix_status"] = "1"
+                    latest_gps_status["latitude"] = nmea_to_dec(parts[3], parts[4])
+                    latest_gps_status["longitude"] = nmea_to_dec(parts[5], parts[6])
+                    # 转换节(knots)为米/秒(m/s)
+                    try:
+                        knots = float(parts[7]) if parts[7] else 0.0
+                        latest_gps_status["speed"] = f"{(knots * 0.514444):.2f}"
+                    except:
+                        latest_gps_status["speed"] = "0.00"
+                else:
+                    latest_gps_status["fix_status"] = "0"
+            has_parsed = True
+
+    # 3. 拦截并解析 $GNGGA 数据（提取更精准的高度和当前锁定的卫星数）
+    if "$GNGGA" in raw_text:
+        parts = raw_text.split(',')
+        if len(parts) >= 10:
+            with data_lock:
+                latest_gps_status["satellites"] = parts[7] if parts[7] else latest_gps_status["satellites"]
+                latest_gps_status["high"] = parts[9] if parts[9] else latest_gps_status["high"]
+            has_parsed = True
+
+    return has_parsed
 
 # ----------------- MQTT 协议栈回调驱动 -----------------
 def on_connect(client, userdata, flags, rc):
@@ -56,19 +106,26 @@ def on_message(client, userdata, msg):
     try:
         raw_text = msg.payload.decode('utf-8', errors='ignore').strip()
         
-        # 提取 GPS 数据
-        parse_gnss_sentence(raw_text)
-        
-        # 提取 JSON 常规 BMS 块
-        json_blocks = re.findall(r'\{[^{}]*\}', raw_text)
-        if json_blocks:
-            for block in json_blocks:
-                try:
-                    parsed_json = json.loads(block)
-                    with data_lock:
-                        latest_bms_status = parsed_json
-                except json.JSONDecodeError:
-                    continue
+        # 尝试使用解析器清洗数据（支持多行刷屏数据）
+        lines = raw_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            # 如果是GPS定位行
+            if parse_gnss_data(line):
+                continue
+                
+            # 提取常规 JSON 块（BMS 电池数据）
+            json_blocks = re.findall(r'\{[^{}]*\}', line)
+            if json_blocks:
+                for block in json_blocks:
+                    try:
+                        parsed_json = json.loads(block)
+                        with data_lock:
+                            latest_bms_status = parsed_json
+                    except json.JSONDecodeError:
+                        continue
     except Exception as e:
         print(f"[ERROR] msg callback error: {str(e)}")
 
@@ -98,7 +155,7 @@ def get_latest_status():
 def send_control_cmd():
     try:
         mqtt_client.publish(TOPIC_PUB_CTRL, json.dumps({"cmd": "read_all"}), qos=0)
-        mqtt_client.publish(TOPIC_PUB_CTRL, "AT+GPSSTEX", qos=0) # 5.7.4 节规范指令 [cite: 800]
+        mqtt_client.publish(TOPIC_PUB_CTRL, "AT+GPSSTEX", qos=0) 
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
@@ -242,16 +299,14 @@ def show_web_page():
             </div>
 
             <script>
-                // 初始化高德地图
                 var map = new AMap.Map('map-container', {
                     zoom: 15,
-                    center: [113.831385, 22.606304] // 默认定位至说明书示例的深圳宝安航城航空路工业园 [cite: 17, 812]
+                    center: [114.394223, 30.516120] // 默认中心微调至你数据所在的华中区域附近
                 });
 
-                // 创建专用的实时轨迹标记图标
                 var marker = new AMap.Marker({
                     map: map,
-                    position: [113.831385, 22.606304],
+                    position: [114.394223, 30.516120],
                     title: 'BMS 终端位置'
                 });
 
@@ -259,7 +314,6 @@ def show_web_page():
                     fetch('/api/status')
                         .then(response => response.json())
                         .then(data => {
-                            // 更新 BMS 信息
                             const bmsContainer = document.getElementById('bms-grid');
                             if (Object.keys(data.bms).length > 0) {
                                 let html = '';
@@ -272,31 +326,28 @@ def show_web_page():
                                 bmsContainer.innerHTML = html;
                             }
 
-                            // 更新定位遥测元数据
                             const gps = data.gps;
                             const isFixed = gps.fix_status === "1";
                             
                             document.getElementById('gps-badge').className = isFixed ? 'badge bg-success' : 'badge bg-warn';
                             document.getElementById('gps-badge').innerText = isFixed ? '已定位' : '未定位';
                             
-                            document.getElementById('val-lng').innerText = gps.longitude;
-                            document.getElementById('val-lat').innerText = gps.latitude;
+                            document.getElementById('val-lng').innerText = gps.longitude + ' °';
+                            document.getElementById('val-lat').innerText = gps.latitude + ' °';
                             document.getElementById('val-high').innerText = gps.high + ' m';
                             document.getElementById('val-speed').innerText = gps.speed + ' m/s';
                             document.getElementById('val-sats').innerText = gps.satellites;
 
-                            // 当定位成功时，无缝通过高德内置算法完成标准的 WGS-84 坐标纠偏并平滑平移
                             if (isFixed) {
                                 var rawLng = parseFloat(gps.longitude);
                                 var rawLat = parseFloat(gps.latitude);
                                 
                                 if (!isNaN(rawLng) && !isNaN(rawLat) && rawLng > 0 && rawLat > 0) {
-                                    // 使用高德官方插件完成 WGS84 -> GCJ02(火星坐标系) 的硬件级精准纠偏
                                     AMap.convertFrom([rawLng, rawLat], 'gps', function (status, result) {
                                         if (result && result.locations) {
                                             var correctedLngLat = result.locations[0];
-                                            marker.setPosition(correctedLngLat); // 刷新图层标记点位置
-                                            map.panTo(correctedLngLat);         // 地图中心平滑移至设备处
+                                            marker.setPosition(correctedLngLat);
+                                            map.panTo(correctedLngLat);
                                         }
                                     });
                                 }
@@ -308,7 +359,7 @@ def show_web_page():
                     fetch('/api/control', { method: 'POST' });
                 }
 
-                setInterval(updateDashboard, 1000); // 1秒高频同步刷新
+                setInterval(updateDashboard, 1000);
             </script>
         </body>
     </html>
@@ -320,7 +371,13 @@ async def receive_bms_data_via_http(request: Request):
     global latest_bms_status
     raw_body = await request.body()
     raw_text = raw_body.decode('utf-8', errors='ignore').strip()
-    parse_gnss_sentence(raw_text)
+    
+    # HTTP 接收端同样调用复合定位解析器
+    lines = raw_text.split('\n')
+    for line in lines:
+        if parse_gnss_data(line.strip()):
+            continue
+
     json_blocks = re.findall(r'\{[^{}]*\}', raw_text)
     if json_blocks:
         for block in json_blocks:
