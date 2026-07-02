@@ -367,7 +367,10 @@ def show_web_page():
     <title>BMS MQTT 远程监控与实时定位</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://webapi.amap.com/maps?v=2.0&key=7403b2df7e7a57a5e0034df12a9eb763"></script>
+
+    <!-- Leaflet + OpenStreetMap，无需高德 Key，避免高德 Key/白名单/安全码导致灰屏 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
         :root {
@@ -448,11 +451,6 @@ def show_web_page():
             border-radius: 6px;
             border: 1px solid var(--border-color);
             background: #e5e7eb;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #64748b;
-            font-size: 13px;
         }
         .gps-row {
             display: flex;
@@ -515,7 +513,7 @@ def show_web_page():
             </div>
 
             <div class="card" style="padding: 10px;">
-                <div id="map-container">地图加载中...</div>
+                <div id="map-container"></div>
                 <div id="map-error"></div>
             </div>
 
@@ -553,28 +551,29 @@ def show_web_page():
             const err = document.getElementById('map-error');
             err.style.display = 'block';
             err.innerText = message;
-            document.getElementById('map-container').innerText = '地图加载失败';
+            console.error(message);
         }
 
         function initMap() {
-            if (typeof AMap === 'undefined') {
-                showMapError('AMap 未定义。请检查高德 Key、域名白名单、网络是否能访问 webapi.amap.com。');
+            if (typeof L === 'undefined') {
+                showMapError('Leaflet 未加载。请检查浏览器是否能访问 unpkg.com。');
                 return;
             }
 
             try {
-                document.getElementById('map-container').innerHTML = '';
-                map = new AMap.Map('map-container', {
-                    zoom: 15,
-                    center: [114.394223, 30.516120],
-                    resizeEnable: true
-                });
+                map = L.map('map-container').setView([30.516120, 114.394223], 15);
 
-                marker = new AMap.Marker({
-                    map: map,
-                    position: [114.394223, 30.516120],
-                    title: 'BMS 终端位置'
-                });
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                marker = L.marker([30.516120, 114.394223]).addTo(map);
+                marker.bindPopup('BMS 终端位置');
+
+                setTimeout(function () {
+                    map.invalidateSize();
+                }, 300);
 
                 mapReady = true;
             } catch (e) {
@@ -634,17 +633,12 @@ def show_web_page():
                             rawLat >= -90 && rawLat <= 90 &&
                             !(rawLng === 0 && rawLat === 0)) {
 
-                            AMap.convertFrom([rawLng, rawLat], 'gps', function (status, result) {
-                                if (status === 'complete' && result && result.locations && result.locations.length > 0) {
-                                    const correctedLngLat = result.locations[0];
-                                    marker.setPosition(correctedLngLat);
-                                    map.panTo(correctedLngLat);
-                                } else {
-                                    const lnglat = [rawLng, rawLat];
-                                    marker.setPosition(lnglat);
-                                    map.panTo(lnglat);
-                                }
-                            });
+                            // Leaflet 使用 [lat, lng]，注意顺序和高德相反
+                            marker.setLatLng([rawLat, rawLng]);
+                            map.setView([rawLat, rawLng], 15);
+                            setTimeout(function () {
+                                map.invalidateSize();
+                            }, 100);
                         }
                     }
                 })
