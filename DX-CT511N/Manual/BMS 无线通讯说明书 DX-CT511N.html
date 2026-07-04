@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS 无线通讯说明书 - DX-CT511N</title>
+    <style>
+        :root {
+            --primary-color: #1e3a8a;
+            --secondary-color: #0284c7;
+            --dark-color: #0f172a;
+            --body-bg: #0f172a;       /* 全局大背景改为深色 */
+            --container-bg: #1e293b;  /* 主内容区改为深灰蓝 */
+            --card-bg: #334155;       /* 表格与流向图卡片背景 */
+            --light-bg: #475569;      /* 交替行背景 */
+            --border-color: #475569;
+            --text-color: #f1f5f9;    /* 全局文字改为亮色 */
+            --code-bg: #0f172a;       /* 行内代码背景 */
+            --note-bg: #7c2d12;       /* 警告框背景改为深琥珀 */
+            --note-text: #ffedd5;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: var(--text-color);
+            line-height: 1.6;
+            background-color: var(--body-bg);
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            background: var(--container-bg);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+        }
+
+        header {
+            border-bottom: 3px solid var(--secondary-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #ffffff;
+            margin: 0 0 10px 0;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 16px;
+            margin: 0;
+        }
+
+        h2 {
+            color: #38bdf8;
+            border-left: 5px solid var(--secondary-color);
+            padding-left: 12px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            font-size: 22px;
+        }
+
+        h3 {
+            color: #f1f5f9;
+            font-size: 18px;
+            margin-top: 25px;
+        }
+
+        p {
+            margin: 0 0 15px 0;
+            color: #cbd5e1;
+        }
+
+        /* 表格样式 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0 25px 0;
+            font-size: 14px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: #ffffff;
+            text-align: left;
+            padding: 14px;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border-color);
+            color: #e2e8f0;
+        }
+
+        tr:nth-child(even) {
+            background-color: var(--light-bg);
+        }
+
+        /* 流程展示 */
+        .flowchart {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .flow-step:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-arrow {
+            color: #38bdf8;
+            margin-right: 15px;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        /* 提示框样式 */
+        .note {
+            background-color: var(--note-bg);
+            border-left: 4px solid #ea580c;
+            color: var(--note-text);
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+        /* 代码及指令样式 */
+        code {
+            font-family: Consolas, Monaco, monospace;
+            background-color: var(--code-bg);
+            padding: 3px 6px;
+            border-radius: 4px;
+            color: #38bdf8;
+            font-size: 14px;
+        }
+
+        pre {
+            font-family: Consolas, Monaco, monospace;
+            background-color: var(--dark-color);
+            color: #f8f8f2;
+            padding: 18px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-size: 13px;
+            border: 1px solid #1e293b;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.6);
+        }
+
+        .highlight-cmd {
+            color: #f43f5e;
+            font-weight: bold;
+        }
+
+        /* 排错卡片布局 */
+        .trouble-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .trouble-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 18px;
+            background: var(--card-bg);
+        }
+
+        .trouble-title {
+            font-weight: bold;
+            color: #f43f5e;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            font-size: 15px;
+        }
+
+        .trouble-title::before {
+            content: "⚠️";
+            margin-right: 8px;
+        }
+        
+        .trouble-desc {
+            color: #e2e8f0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>BMS 无线通讯说明书</h1>
+        <p class="subtitle">通过 MQTT 协议上传 BMS 与 GPS 数据到网页看板</p>
+    </header>
+
+    <h2>1. 概述与通讯流程</h2>
+    <p>本系统通过 MQTT 协议将底层 BMS 与 GPS 数据实时上传并同步渲染至网页看板。基本环境参数与网络交互架构定义如下：</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%;">项目</th>
+                <th style="width: 35%;">值</th>
+                <th style="width: 40%;">用途</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>模块串口</strong></td>
+                <td><code>115200 / 8 / N / 1，CRLF</code></td>
+                <td>默认 AT 指令模式，命令末尾使用 <code>\r\n</code>。 [cite: 4]</td>
+            </tr>
+            <tr>
+                <td><strong>BMS 服务器公网地址</strong></td>
+                <td><code>http://8.148.13.100:8080/</code></td>
+                <td>网页看板地址 [cite: 4]</td>
+            </tr>
+            <tr>
+                <td><strong>MQTT Broker</strong></td>
+                <td><code>8.148.13.100:1883</code></td>
+                <td>CT511N 从公网连接该地址；服务器本机 FastAPI 可用 <code>127.0.0.1</code>。 [cite: 4]</td>
+            </tr>
+            <tr>
+                <td><strong>上传 Topic</strong></td>
+                <td><code class="highlight-cmd">bms/data</code></td>
+                <td>BMS、GPS、telemetry 数据发布到这里，FastAPI 订阅并更新网页。 [cite: 4]</td>
+            </tr>
+            <tr>
+                <td><strong>控制 Topic</strong></td>
+                <td><code class="highlight-cmd">bms/control</code></td>
+                <td>网页按钮下发控制命令；CT511N/MCU 必须订阅这个 topic。 [cite: 4]</td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="note">*注意：串口参数、服务器公网 IP 以及各端口可相应改变 [cite: 5]</div>
+
+    <h3>通讯交互数据流向：</h3>
+    <div class="flowchart">
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>点击网页按钮 [cite: 7]</span></div>
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>FastAPI POST <code>/api/control/bms</code> 或 <code>/api/control/gps</code> [cite: 8]</span></div>
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>MQTT publish 到 <code class="highlight-cmd">bms/control</code> [cite: 9]</span></div>
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>CT511N/MCU 订阅 <code class="highlight-cmd">bms/control</code> [cite: 10]</span></div>
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>MCU 解析 payload 并执行：<code>REQ_BMS</code> 或 <code>AT+GPSSTEX</code> [cite: 11]</span></div>
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>MCU/CT511N publish 数据到 <code class="highlight-cmd">bms/data</code> [cite: 12]</span></div>
+        <div class="flow-step"><span class="step-arrow">➔</span> <span>FastAPI 订阅 <code class="highlight-cmd">bms/data</code>，网页刷新 [cite: 13]</span></div>
+    </div>
+
+    <h2>2. 防止卡死恢复机制</h2>
+    <p>建议每次调试开始前先清理旧 MQTT/IP 会话，避免上一次连接残留导致 MIPSTART、MCONNECT 或订阅失败。环境异常或卡死时也应优先执行本章指令： [cite: 23]</p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 30%;">清理控制指令</th>
+                <th>用途说明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>AT+MDISCONNECT</code></td>
+                <td>挂断 MQTT 会话连接。 [cite: 24]</td>
+            </tr>
+            <tr>
+                <td><code>AT+MIPCLOSE</code></td>
+                <td>关闭 socket 端口。 [cite: 24]</td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="note">*说明：如果模块提示当前没有 MQTT/IP 会话，返回 ERROR 或类似提示不一定是问题。目标是把旧连接清掉。如果仍然异常，再执行模块复位或重新打开网络，具体命令以手册和固件返回为准。 [cite: 25]</div>
+
+    <h2>3. 模块联网步骤指令</h2>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 15%;">指令序号</th>
+                <th style="width: 35%;">串口发送</th>
+                <th style="width: 50%;">期望返回 / 说明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>3.1</strong></td>
+                <td><code>AT</code></td>
+                <td>返回 <code>OK</code>，说明串口可用。 [cite: 27]</td>
+            </tr>
+            <tr>
+                <td><strong>3.2</strong></td>
+                <td><code>AT+QICSGP=1,1,"","",""</code></td>
+                <td>配置 APN。该联网卡可先空参数测试。 [cite: 27]</td>
+            </tr>
+            <tr>
+                <td><strong>3.3</strong></td>
+                <td><code>AT+NETOPEN</code></td>
+                <td>返回 <code>OK</code> 与 <code>+NETOPEN:SUCCESS</code> 表示数据网络打开。 [cite: 27]</td>
+            </tr>
+            <tr>
+                <td><strong>3.4</strong></td>
+                <td><code>AT+CEREG?</code></td>
+                <td>第二位为 <code>1</code> 或 <code>5</code> 通常表示已注册网络；若反复为 <code>2/3</code>，先检查 SIM、天线、信号和流量。 [cite: 27]</td>
+            </tr>
+            <tr>
+                <td><strong>3.5</strong></td>
+                <td><code>AT+CEREG=0</code></td>
+                <td>关闭网络注册状态的主动上报。 [cite: 27]</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>4. 连接MQTT Broker并订阅控制Topic</h2>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 15%;">指令序号</th>
+                <th style="width: 35%;">串口发送</th>
+                <th style="width: 50%;">期望返回 / 说明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>4.1</strong></td>
+                <td><code>AT+MCONFIG="BMS_0001"</code></td>
+                <td>设置 MQTT Client ID。不同设备必须使用不同 ID，避免互相踢线。 [cite: 29]</td>
+            </tr>
+            <tr>
+                <td><strong>4.2</strong></td>
+                <td><code>AT+MIPSTART="8.148.13.100",1883</code></td>
+                <td>连接 MQTT Broker。成功通常返回 <code>+MIPSTART: SUCCESS</code>。 [cite: 29]</td>
+            </tr>
+            <tr>
+                <td><strong>4.3</strong></td>
+                <td><code>AT+MCONNECT=1,60</code></td>
+                <td>连接 MQTT 会话。成功通常返回 <code>+MCONNECT: SUCCESS</code>。 [cite: 29]</td>
+            </tr>
+            <tr>
+                <td><strong>4.4</strong></td>
+                <td><code>AT+MSUB="bms/control",0</code></td>
+                <td>订阅网页控制 Topic。没有这一步，网页按钮发出的控制消息不会下发到 CT511N/MCU。 [cite: 29]</td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="note">*说明：若要让网页按钮控制设备，订阅控制 topic 是必须的。 [cite: 30]</div>
+
+    <h2>5. 网页按钮与下位机动作约定</h2>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%;">网页按钮</th>
+                <th style="width: 25%;">MQTT Topic</th>
+                <th style="width: 20%;">Payload</th>
+                <th style="width: 30%;">MCU/串口桥接程序动作</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>更新 BMS 数据</strong></td>
+                <td><code>bms/control</code></td>
+                <td><code>REQ_BMS_UPDATE</code></td>
+                <td>MCU 读取 BMS 状态，组包 JSON 后发布到 <code>bms/data</code>。 [cite: 33]</td>
+            </tr>
+            <tr>
+                <td><strong>更新 GPS 定位</strong></td>
+                <td><code>bms/control</code></td>
+                <td><code>AT+GPSSTEX</code></td>
+                <td>MCU 收到后向 CT511N 串口发送 <code>AT+GPSSTEX</code>，读取返回的 <code>+GPSSTEX</code>，再发布到 <code>bms/data</code>。 [cite: 33]</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>6. 数据上报规范 (JSON/原始行)</h2>
+    
+    <h3>6.1 上传 BMS 数据（JSON 版）</h3>
+    <p>网页左侧会显示 voltage、current、soc、temperature 等字段。代码会把 type=bms 之外的字段作为 BMS 指标渲染。 [cite: 47]</p>
+    <pre><code>AT+MPUB="bms/data",0,0,"{\"type\":\"bms\",\"voltage\":52.3,\"current\":1.8,\"soc\":76,\"temperature\":31.5}" [cite: 44]
+成功后返回：
+OK
++MPUB:SUCCESS [cite: 46]</code></pre>
+
+    <h3>6.2 上传 GPS 定位 (JSON 版)</h3>
+    <p>网页右侧会显示经纬度、海拔、速度、卫星数；地图会移动到该坐标。 [cite: 61]</p>
+    <pre><code>AT+MPUB="bms/data",0,0,"{\"type\":\"gps\",\"fix_status\":1,\"longitude\":114.394170,\"latitude\":30.515838,\"high\":15.598,\"speed\":0.466,\"satellites\":19}" [cite: 60]</code></pre>
+
+    <h3>6.3 上传 BMS + GPS 合并数据 (JSON 版)</h3>
+    <p>使用 telemetry 类型，一条消息同时带 BMS 和 GPS： [cite: 63]</p>
+    <pre><code>AT+MPUB="bms/data",0,0,"{\"type\":\"telemetry\",\"bms\":{\"voltage\":52.3,\"current\":1.8,\"soc\":76,\"temperature\":31.5},\"gps\":{\"fix_status\":1,\"longitude\":114.394170,\"latitude\":30.515838,\"high\":15.598,\"speed\":0.466,\"satellites\":19}}" [cite: 64]</code></pre>
+
+    <h3>6.4 上传 GPS 定位 (原始行)</h3>
+    <p>代码也能解析 +GPSSTEX / +GPS5TEX 形式的原始 GPS 行，可直接发布： [cite: 66]</p>
+    <pre><code>AT+MPUB="bms/data",0,0,"+GPSSTEX: 1, 1, 114.394170, 15.598000, 30.515838, 0.466000, 28, 19" [cite: 69]</code></pre>
+
+    <h2>7. GPS 硬件、有源天线与 AGNSS 启动流程</h2>
+    <div class="note"><strong>说明：</strong>如果底板使用有源 GPS 天线，需要先打开天线偏置供电。若使用无源天线或底板供电方式不同，必须按硬件设计和手册确认后再执行偏置供电相关命令。 [cite: 72]</div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 15%;">指令序号</th>
+                <th style="width: 35%;">串口发送</th>
+                <th style="width: 50%;">用途</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>7.1</strong></td>
+                <td><code>AT+CGDRT=12,1</code></td>
+                <td>打开指定通道的偏置供电开关，有源天线必须。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.2</strong></td>
+                <td><code>AT+CGSETV=12,1</code></td>
+                <td>设置天线供电电压/使能状态，具体含义以手册 5.7.1 为准。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.3</strong></td>
+                <td><code>AT+CGGETV=12</code></td>
+                <td>确认天线供电状态。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.4</strong></td>
+                <td><code>AT+MGPSC=1</code></td>
+                <td>启动 GPS/GNSS 核心硬件引擎。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.5</strong></td>
+                <td><code>AT+AGNSSGET=pos.asrmicro.com</code></td>
+                <td>通过 4G 下载 AGNSS 辅助星历数据。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.6</strong></td>
+                <td><code>AT+AGNSSSET</code></td>
+                <td>将已下载的 AGNSS 数据写入/喂给 GNSS 芯片。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.7</strong></td>
+                <td><code>AT+GPSMODE=1</code></td>
+                <td>设置 GPS 模式为热启动，利用星历和时钟缓存加速定位。 [cite: 73]</td>
+            </tr>
+            <tr>
+                <td><strong>7.8</strong></td>
+                <td><code>AT+GPSSTEX</code></td>
+                <td>请求输出扩展定位结果，返回后可发布到 bms/data。 [cite: 73]</td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="note"><strong>说明：</strong>AGNSS 依赖 4G 网络、DNS、服务器可达性和模块固件支持。若 AGNSSGET 失败，不一定代表 GPS 硬件坏了；可以先测试普通冷启动/开阔天空定位。 [cite: 74]</div>
+    
+    <p><strong>其它设置：</strong></p>
+    <ul>
+        <li><code>AT+MGPSGET=ALL,0</code> ：关闭 GPS 串口刷屏 [cite: 76]</li>
+        <li><code>AT+MGPSGET=ALL,1</code> ：开启 GPS 串口刷屏 [cite: 76]</li>
+    </ul>
+
+    <h2>8. 完整示例调试顺序</h2>
+    <pre><code>AT
+AT+MDISCONNECT #挂断 MQTT
+AT+MIPCLOSE #关闭 socket 端口
+AT+QICSGP=1,1,"","",""
+AT+NETOPEN
+AT+CEREG?
+AT+CEREG=0 #关闭 network 注册状态的主动上报
+AT+MCONFIG="BMS_0001" #自定义设备名称
+AT+MIPSTART="8.148.13.100",1883
+AT+MCONNECT=1,60
+AT+MSUB="bms/control",0
+
+# GPS 初始化，有源天线场景
+AT+CGDRT=12,1
+AT+CGSETV=12,1
+AT+CGGETV=12
+AT+MGPSC=1
+AT+AGNSSGET=pos.asrmicro.com
+AT+AGNSSSET
+AT+GPSMODE=1
+AT+MGPSGET=ALL,0 #关闭串口刷屏 [cite: 78, 79, 80]
+
+# 点击“更新BMS数据”
+# 返回REQ_BMS_UPDATE给 下位机
+AT+MPUB="bms/data",0,0,"{\"type\":\"bms\",\"voltage\":52.3,\"soc\":76}" [cite: 81, 82, 83]
+
+# 点击“更新GPS定位”
+# 返回AT+GPSSTEX给 下位机
+# 测试JSON GPS定位上传
+AT+MPUB="bms/data",0,0,"{\"type\":\"gps\",\"fix_status\":1,\"longitude\":114.394170,\"latitude\":30.515838,\"high\":15.598,\"speed\":0.466,\"satellites\":18}" [cite: 82, 83, 84, 85]
+
+# 测试原始行GPS定位上传
+AT+MPUB="bms/data",0,0,"+GPSSTEX: 1, 1, 114.394170, 15.598000, 30.515838, 0.466000, 28, 19" [cite: 86, 87]</code></pre>
+
+    <h2>9. 快速排错</h2>
+    <div class="trouble-grid">
+        <div class="trouble-card">
+            <div class="trouble-title">网页按钮点了，串口没反应</div>
+            <div class="trouble-desc">是否执行 AT+MSUB="bms/control",0；FastAPI 是否真的 publish 到 bms/control；MCU 是否解析下行 MQTT payload。 [cite: 89]</div>
+        </div>
+        <div class="trouble-card">
+            <div class="trouble-title">mosquitto_sub 能看到 bms/control，但 CT511N 串口没显示</div>
+            <div class="trouble-desc">CT511N 没订阅、订阅失败、Client ID 冲突、连接断开，或 Broker 地址不一致。 [cite: 89]</div>
+        </div>
+        <div class="trouble-card">
+            <div class="trouble-title">CT511N 串口收到 payload，但 GPS 没输出</div>
+            <div class="trouble-desc">payload 只是 MQTT 下行消息，不会自动当 AT 执行；MCU 需要把 AT+GPSSTEX 重新写入 CT511N 串口。 [cite: 89]</div>
+        </div>
+        <div class="trouble-card">
+            <div class="trouble-title">MQTT 连接卡住</div>
+            <div class="trouble-desc">先 AT+MDISCONNECT，再 AT+MIPCLOSE，然后重新 MIPSTART/MCONNECT/MSUB。 [cite: 89]</div>
+        </div>
+        <div class="trouble-card">
+            <div class="trouble-title">GPS 长期未定位</div>
+            <div class="trouble-desc">检查天线、是否开阔天空、有源天线偏置供电、MGPSC、AGNSSGET/SET、GPSMODE。 [cite: 89]</div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
