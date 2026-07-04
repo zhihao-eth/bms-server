@@ -470,13 +470,17 @@ def show_web_page():
         .bg-success { background: #d1fae5; color: #065f46; }
         .bg-warn { background: #fef3c7; color: #92400e; }
         .bg-error { background: #fee2e2; color: #991b1b; }
-        button:disabled {
+        button {
             background: var(--brand-color);
             color: white;
             border: none;
             padding: 6px 12px;
             font-size: 13px;
             border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:disabled {
             opacity: 0.65;
             cursor: not-allowed;
         }
