@@ -542,8 +542,8 @@ def show_web_page():
                 <div class="small-text">
                     <div>连接状态：<span id="mqtt-connected">unknown</span></div>
                     <div>最后时间：<span id="mqtt-time">-</span></div>
-                    <div>最后 Topic：<span id="mqtt-topic">-</span></div>
-                    <div>最后 Payload：</div>
+                    <div>最后Topic：<span id="mqtt-topic">-</span></div>
+                    <div>最后收到的数据：</div>
                     <div id="mqtt-payload" style="font-family: monospace; margin-top: 4px;">-</div>
                 </div>
             </div>
