@@ -626,11 +626,11 @@ def show_web_page():
                         document.getElementById('val-speed').innerText = gps.speed + ' m/s';
                         document.getElementById('val-sats').innerText = gps.satellites;
                     } else {
-                        document.getElementById('val-lng').innerText = '--';
-                        document.getElementById('val-lat').innerText = '--';
-                        document.getElementById('val-high').innerText = '--';
-                        document.getElementById('val-speed').innerText = '--';
-                        document.getElementById('val-sats').innerText = '--';
+                        document.getElementById('val-lng').innerText = '-----';
+                        document.getElementById('val-lat').innerText = '-----';
+                        document.getElementById('val-high').innerText = '-----';
+                        document.getElementById('val-speed').innerText = '-----';
+                        document.getElementById('val-sats').innerText = '-----';
                     }
 
                     const mqtt = data.mqtt || {};
