@@ -219,11 +219,12 @@ int main() {
 
                 cross_sleep(200);
                 UART_SendString("AT+GPSSTEX\r\n"); // 驱动物理模组执行卫星解算
+                UART_SendString("AT+MGPSGET=ALL,0\r\n"); cross_sleep(200); // 关闭GPS串口刷屏
             }
 
             //  【判定条件 3】：捕捉上传的“ GPS 定位”
             //  模组返回真实 GPS 报文 "+GPSSTEX: ..." -> MCU 捕获并推给 MQTT
-            if (strstr(rx_buffer, "+GPSSTEX:") != NULL) {
+            if (strstr(rx_buffer, "+GPSSTEX:") != NULL && strstr(rx_buffer, "AT+MPUB") == NULL) {
                 printf(">>> Found raw GPS data from module! Routing to MQTT...\n");
 
                 char* gps_line = strstr(rx_buffer, "+GPSSTEX:");
