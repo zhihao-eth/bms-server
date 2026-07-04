@@ -364,7 +364,7 @@ def show_web_page():
 <!DOCTYPE html>
 <html>
 <head>
-    <title>BMS MQTT 远程监控与实时定位</title>
+    <title>BMS 远程实时监控与定位</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -470,14 +470,15 @@ def show_web_page():
         .bg-success { background: #d1fae5; color: #065f46; }
         .bg-warn { background: #fef3c7; color: #92400e; }
         .bg-error { background: #fee2e2; color: #991b1b; }
-        button {
+        button:disabled {
             background: var(--brand-color);
             color: white;
             border: none;
             padding: 6px 12px;
             font-size: 13px;
             border-radius: 4px;
-            cursor: pointer;
+            opacity: 0.65;
+            cursor: not-allowed;
         }
         #map-error {
             margin-top: 8px;
@@ -498,12 +499,12 @@ def show_web_page():
     <div class="dashboard">
         <header>
             <div>
-                <h1>BMS MQTT 远程实时监控与定位看板</h1>
+                <h1>BMS 远程实时监控与定位看板</h1>
                 <div class="subtitle">数据来源：MQTT topic bms/data</div>
             </div>
             <div style="display:flex; gap:8px;">
-            <button onclick="requestBmsData()">更新 BMS 数据</button>
-            <button onclick="requestGpsData()">更新 GPS 定位</button>
+            <button id="btn-bms" onclick="requestBmsData()">更新 BMS 数据</button>
+            <button id="btn-gps" onclick="requestGpsData()">更新 GPS 定位</button>
             </div>
         </header>
 
@@ -536,8 +537,8 @@ def show_web_page():
                 <div class="card-title" style="margin-top: 20px;">📡 MQTT 状态</div>
                 <div class="small-text">
                     <div>连接状态：<span id="mqtt-connected">unknown</span></div>
-                    <div>最后 Topic：<span id="mqtt-topic">-</span></div>
                     <div>最后时间：<span id="mqtt-time">-</span></div>
+                    <div>最后 Topic：<span id="mqtt-topic">-</span></div>
                     <div>最后 Payload：</div>
                     <div id="mqtt-payload" style="font-family: monospace; margin-top: 4px;">-</div>
                 </div>
@@ -627,7 +628,7 @@ def show_web_page():
                         document.getElementById('val-speed').innerText = '--';
                         document.getElementById('val-sats').innerText = '--';
                     }
-                    
+
                     const mqtt = data.mqtt || {};
                     document.getElementById('mqtt-connected').innerText = mqtt.connected ? 'connected' : 'disconnected';
                     document.getElementById('mqtt-connected').style.color = mqtt.connected ? '#065f46' : '#991b1b';
@@ -656,18 +657,48 @@ def show_web_page():
                 .catch(err => console.error('updateDashboard error:', err));
         }
 
+        function setButtonLoading(buttonId, loadingText, normalText, isLoading) {
+            const btn = document.getElementById(buttonId);
+            if (!btn) return;
+
+            btn.disabled = isLoading;
+            btn.innerText = isLoading ? loadingText : normalText;
+        }
+
         function requestBmsData() {
+            setButtonLoading('btn-bms', '发送中...', '更新 BMS 数据', true);
+
             fetch('/api/control/bms', { method: 'POST' })
                 .then(resp => resp.json())
-                .then(data => console.log('request bms:', data))
-                .catch(err => console.error('request bms error:', err));
+                .then(data => {
+                    console.log('request bms:', data);
+                })
+                .catch(err => {
+                    console.error('request bms error:', err);
+                })
+                .finally(() => {
+                    setTimeout(() => {
+                        setButtonLoading('btn-bms', '发送中...', '更新 BMS 数据', false);
+                    }, 800);
+                });
         }
 
         function requestGpsData() {
+            setButtonLoading('btn-gps', '发送中...', '更新 GPS 定位', true);
+
             fetch('/api/control/gps', { method: 'POST' })
                 .then(resp => resp.json())
-                .then(data => console.log('request gps:', data))
-                .catch(err => console.error('request gps error:', err));
+                .then(data => {
+                    console.log('request gps:', data);
+                })
+                .catch(err => {
+                    console.error('request gps error:', err);
+                })
+                .finally(() => {
+                    setTimeout(() => {
+                        setButtonLoading('btn-gps', '发送中...', '更新 GPS 定位', false);
+                    }, 800);
+                });
         }
 
         window.addEventListener('load', function () {
