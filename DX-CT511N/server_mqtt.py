@@ -52,7 +52,7 @@ TOPIC_SUB_DATA = "bms/data"
 # 只有当 MCU/串口桥接程序订阅这个 topic 并转成 AT 指令时，它才会真正控制 CT511N。
 TOPIC_PUB_CTRL = "bms/control"
 
-# 可选：如果你的 Broker 设置了用户名密码，填这里；没有就保持 None
+# 可选：如果 Broker 设置了用户名密码，填这里；没有就保持 None
 MQTT_USERNAME = None
 MQTT_PASSWORD = None
 
@@ -498,10 +498,13 @@ def show_web_page():
     <div class="dashboard">
         <header>
             <div>
-                <h1>BMS MQTT 远程监控与实时定位看板</h1>
+                <h1>BMS MQTT 远程实时监控与定位看板</h1>
                 <div class="subtitle">数据来源：MQTT topic bms/data</div>
             </div>
-            <button onclick="triggerFetch()">MQTT 下发 AT+GPSSTEX</button>
+            <div style="display:flex; gap:8px;">
+            <button onclick="requestBmsData()">更新 BMS 数据</button>
+            <button onclick="requestGpsData()">更新 GPS 定位</button>
+            </div>
         </header>
 
         <div class="grid-layout">
@@ -519,7 +522,7 @@ def show_web_page():
 
             <div class="card">
                 <div class="card-title">
-                    <span>📍 定位遥测元数据</span>
+                    <span>📍 定位遥测数据</span>
                     <span id="gps-badge" class="badge bg-warn">未定位</span>
                 </div>
                 <div>
@@ -611,12 +614,20 @@ def show_web_page():
                     document.getElementById('gps-badge').className = isFixed ? 'badge bg-success' : 'badge bg-warn';
                     document.getElementById('gps-badge').innerText = isFixed ? '已定位' : '未定位';
 
-                    document.getElementById('val-lng').innerText = (gps.longitude || '0.000000') + ' °';
-                    document.getElementById('val-lat').innerText = (gps.latitude || '0.000000') + ' °';
-                    document.getElementById('val-high').innerText = (gps.high || '0.000') + ' m';
-                    document.getElementById('val-speed').innerText = (gps.speed || '0.000') + ' m/s';
-                    document.getElementById('val-sats').innerText = gps.satellites || '0';
-
+                    if (isFixed) {
+                        document.getElementById('val-lng').innerText = gps.longitude + ' °';
+                        document.getElementById('val-lat').innerText = gps.latitude + ' °';
+                        document.getElementById('val-high').innerText = gps.high + ' m';
+                        document.getElementById('val-speed').innerText = gps.speed + ' m/s';
+                        document.getElementById('val-sats').innerText = gps.satellites;
+                    } else {
+                        document.getElementById('val-lng').innerText = '--';
+                        document.getElementById('val-lat').innerText = '--';
+                        document.getElementById('val-high').innerText = '--';
+                        document.getElementById('val-speed').innerText = '--';
+                        document.getElementById('val-sats').innerText = '--';
+                    }
+                    
                     const mqtt = data.mqtt || {};
                     document.getElementById('mqtt-connected').innerText = mqtt.connected ? 'connected' : 'disconnected';
                     document.getElementById('mqtt-connected').style.color = mqtt.connected ? '#065f46' : '#991b1b';
@@ -645,11 +656,18 @@ def show_web_page():
                 .catch(err => console.error('updateDashboard error:', err));
         }
 
-        function triggerFetch() {
-            fetch('/api/control', { method: 'POST' })
+        function requestBmsData() {
+            fetch('/api/control/bms', { method: 'POST' })
                 .then(resp => resp.json())
-                .then(data => console.log('control:', data))
-                .catch(err => console.error('control error:', err));
+                .then(data => console.log('request bms:', data))
+                .catch(err => console.error('request bms error:', err));
+        }
+
+        function requestGpsData() {
+            fetch('/api/control/gps', { method: 'POST' })
+                .then(resp => resp.json())
+                .then(data => console.log('request gps:', data))
+                .catch(err => console.error('request gps error:', err));
         }
 
         window.addEventListener('load', function () {
