@@ -347,31 +347,32 @@ def get_latest_status():
 def send_control_cmd(cmd_type: str):
     """
     网页按钮发布控制命令到 MQTT。
-    MCU/串口桥接程序需要订阅 bms/control，
-    然后根据 payload 转成对应串口指令。
+    MCU/串口桥接程序需要订阅 bms/control。
+    cmd_type 可选值: 'bms' 或 'gps'
     """
-    try:
-        cmd_type = cmd_type.lower()
 
+    cmd_type = cmd_type.lower()
+
+    try:
         if cmd_type == "bms":
-            payload = "REQ_BMS"
+            # 下发给网关 MCU （通知 MCU 去读电芯并用 AT+MPUB 发回来）
+            payload = "REQ_BMS_UPDATE"
         elif cmd_type == "gps":
+            # 官方标准的查询定位信息指令（对应大夏龙雀官方指令） [cite: 799]
             payload = "AT+GPSSTEX"
         else:
-            return {"status": "error", "detail": "unknown command type"}
+            # 如果前端传了不支持的类型，直接返回 400 错误
+            raise HTTPException(status_code=400, detail=f"Unsupported command type: {cmd_type}")
 
-        result = mqtt_client.publish(TOPIC_PUB_CTRL, payload, qos=0)
-
-        return {
-            "status": "success",
-            "cmd_type": cmd_type,
-            "topic": TOPIC_PUB_CTRL,
-            "payload": payload,
-            "mqtt_rc": result.rc
-        }
-
+        # 通过 MQTT 发布指令
+        mqtt_client.publish(TOPIC_PUB_CTRL, payload, qos=0)
+        return {"status": "success", "cmd_type": cmd_type, "topic": TOPIC_PUB_CTRL, "payload": payload}
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
 
 @app.get("/", response_class=HTMLResponse)
 def show_web_page():
