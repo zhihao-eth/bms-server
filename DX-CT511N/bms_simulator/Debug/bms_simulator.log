@@ -1,0 +1,4 @@
+﻿  bms_simulator.cpp
+F:\bms_project\bms-server\DX-CT511N\bms_simulator\bms_simulator.cpp(206,41): warning C4305: “=”: 从“double”到“float”截断
+F:\bms_project\bms-server\DX-CT511N\bms_simulator\bms_simulator.cpp(207,40): warning C4305: “=”: 从“double”到“float”截断
+  bms_simulator.vcxproj -> F:\bms_project\bms-server\DX-CT511N\bms_simulator\Debug\bms_simulator.exe

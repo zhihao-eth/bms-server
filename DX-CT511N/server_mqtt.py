@@ -358,8 +358,8 @@ def send_control_cmd(cmd_type: str):
             # 下发给网关 MCU （通知 MCU 去读电芯并用 AT+MPUB 发回来）
             payload = "REQ_BMS_UPDATE"
         elif cmd_type == "gps":
-            # 官方标准的查询定位信息指令（对应大夏龙雀官方指令） [cite: 799]
-            payload = "AT+GPSSTEX"
+            # 下发给网关 MCU （通知 MCU 去读电芯并用 AT+MPUB 发回来）
+            payload = "REQ_GPS_UPDATE"
         else:
             # 如果前端传了不支持的类型，直接返回 400 错误
             raise HTTPException(status_code=400, detail=f"Unsupported command type: {cmd_type}")
