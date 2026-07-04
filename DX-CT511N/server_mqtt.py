@@ -343,20 +343,35 @@ def get_latest_status():
         }
 
 
-@app.post("/api/control")
-def send_control_cmd():
+@app.post("/api/control/{cmd_type}")
+def send_control_cmd(cmd_type: str):
     """
     网页按钮发布控制命令到 MQTT。
-    注意：只有 MCU/串口桥接程序订阅 bms/control，并把命令写入 CT511N UART，
-    CT511N 才会真的执行 AT+GPSSTEX。
+    MCU/串口桥接程序需要订阅 bms/control，
+    然后根据 payload 转成对应串口指令。
     """
     try:
-        payload = "AT+GPSSTEX"
-        mqtt_client.publish(TOPIC_PUB_CTRL, payload, qos=0)
-        return {"status": "success", "topic": TOPIC_PUB_CTRL, "payload": payload}
+        cmd_type = cmd_type.lower()
+
+        if cmd_type == "bms":
+            payload = "REQ_BMS"
+        elif cmd_type == "gps":
+            payload = "AT+GPSSTEX"
+        else:
+            return {"status": "error", "detail": "unknown command type"}
+
+        result = mqtt_client.publish(TOPIC_PUB_CTRL, payload, qos=0)
+
+        return {
+            "status": "success",
+            "cmd_type": cmd_type,
+            "topic": TOPIC_PUB_CTRL,
+            "payload": payload,
+            "mqtt_rc": result.rc
+        }
+
     except Exception as e:
         return {"status": "error", "detail": str(e)}
-
 
 @app.get("/", response_class=HTMLResponse)
 def show_web_page():
