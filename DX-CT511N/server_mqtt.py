@@ -570,11 +570,37 @@ def show_web_page():
         let marker = null;
         let mapReady = false;
 
+        const INITIAL_GPS_LNG = 114.394223;
+        const INITIAL_GPS_LAT = 30.516120;
+
         function showMapError(message) {
             const err = document.getElementById('map-error');
             err.style.display = 'block';
             err.innerText = message;
             console.error(message);
+        }
+
+        // WGS84 -> 百度 BD09
+        function convertWgs84ToBaidu(lng, lat, callback) {
+            const gpsPoint = new BMapGL.Point(lng, lat);
+            const convertor = new BMapGL.Convertor();
+
+            // 1 = GPS/WGS84
+            // 5 = BD09
+            convertor.translate([gpsPoint], 1, 5, function (data) {
+                if (data.status === 0 &&
+                    data.points &&
+                    data.points.length > 0) {
+
+                    callback(data.points[0]);
+
+                } else {
+                    console.error('百度坐标转换失败:', data);
+
+                    // 转换失败时至少还能显示原始位置
+                    callback(gpsPoint);
+                }
+            });
         }
 
         function initMap() {
@@ -585,16 +611,23 @@ def show_web_page():
 
             try {
                 map = new BMapGL.Map('map-container');
-
-                const point = new BMapGL.Point(114.394223, 30.516120);
-
-                map.centerAndZoom(point, 15);
                 map.enableScrollWheelZoom(true);
 
-                marker = new BMapGL.Marker(point);
-                map.addOverlay(marker);
+                // 初始坐标也先从 WGS84 转成百度坐标
+                convertWgs84ToBaidu(
+                    INITIAL_GPS_LNG,
+                    INITIAL_GPS_LAT,
+                    function (baiduPoint) {
 
-                mapReady = true;
+                        map.centerAndZoom(baiduPoint, 15);
+
+                        marker = new BMapGL.Marker(baiduPoint);
+                        map.addOverlay(marker);
+
+                        mapReady = true;
+                    }
+                );
+
             } catch (e) {
                 showMapError('百度地图初始化失败：' + e.message);
             }
@@ -605,18 +638,11 @@ def show_web_page():
                 return;
             }
 
-            const gpsPoint = new BMapGL.Point(rawLng, rawLat);
-            const convertor = new BMapGL.Convertor();
+            convertWgs84ToBaidu(rawLng, rawLat, function (baiduPoint) {
 
-            convertor.translate([gpsPoint], 1, 5, function (data) {
-                if (data.status === 0 && data.points && data.points.length > 0) {
-                    const point = data.points[0];
+                marker.setPosition(baiduPoint);
+                map.panTo(baiduPoint);
 
-                    marker.setPosition(point);
-                    map.panTo(point);
-                } else {
-                    console.error('百度坐标转换失败:', data);
-                }
             });
         }
 
