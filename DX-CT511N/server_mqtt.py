@@ -384,10 +384,9 @@ def show_web_page():
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Leaflet + OpenStreetMap，无需高德 Key，避免高德 Key/白名单/安全码导致灰屏 -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
+    <!-- Baidu Map -->
+    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=wTifec4XNI4FQRvA9eabMK1EUuweIpba"></script>
+    
     <style>
         :root {
             --bg-main: #f8fafc;
@@ -579,30 +578,46 @@ def show_web_page():
         }
 
         function initMap() {
-            if (typeof L === 'undefined') {
-                showMapError('Leaflet 未加载。请检查浏览器是否能访问 unpkg.com。');
+            if (typeof BMapGL === 'undefined') {
+                showMapError('百度地图 API 未加载，请检查 AK 和 Referer 白名单配置。');
                 return;
             }
 
             try {
-                map = L.map('map-container').setView([30.516120, 114.394223], 15);
+                map = new BMapGL.Map('map-container');
 
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    attribution: '&copy; OpenStreetMap contributors'
-                }).addTo(map);
+                const point = new BMapGL.Point(114.394223, 30.516120);
 
-                marker = L.marker([30.516120, 114.394223]).addTo(map);
-                marker.bindPopup('BMS 终端位置');
+                map.centerAndZoom(point, 15);
+                map.enableScrollWheelZoom(true);
 
-                setTimeout(function () {
-                    map.invalidateSize();
-                }, 300);
+                marker = new BMapGL.Marker(point);
+                map.addOverlay(marker);
 
                 mapReady = true;
             } catch (e) {
-                showMapError('地图初始化失败：' + e.message);
+                showMapError('百度地图初始化失败：' + e.message);
             }
+        }
+
+        function updateBaiduMapPosition(rawLng, rawLat) {
+            if (!mapReady || !marker) {
+                return;
+            }
+
+            const gpsPoint = new BMapGL.Point(rawLng, rawLat);
+            const convertor = new BMapGL.Convertor();
+
+            convertor.translate([gpsPoint], 1, 5, function (data) {
+                if (data.status === 0 && data.points && data.points.length > 0) {
+                    const point = data.points[0];
+
+                    marker.setPosition(point);
+                    map.panTo(point);
+                } else {
+                    console.error('百度坐标转换失败:', data);
+                }
+            });
         }
 
         function renderObject(obj, prefix = '') {
@@ -665,12 +680,7 @@ def show_web_page():
                             rawLat >= -90 && rawLat <= 90 &&
                             !(rawLng === 0 && rawLat === 0)) {
 
-                            // Leaflet 使用 [lat, lng]，注意顺序和高德相反
-                            marker.setLatLng([rawLat, rawLng]);
-                            map.setView([rawLat, rawLng], 15);
-                            setTimeout(function () {
-                                map.invalidateSize();
-                            }, 100);
+                            updateBaiduMapPosition(rawLng, rawLat);
                         }
                     }
                 })
