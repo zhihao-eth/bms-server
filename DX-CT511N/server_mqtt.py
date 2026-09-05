@@ -42,7 +42,7 @@ data_lock = threading.Lock()
 # ----------------- MQTT 配置 -----------------
 # FastAPI 程序与 EMQX 容器位于同一个 Docker 网络时，MQTT_BROKER 建议使用 EMQX 的容器名或网络别名，例如 "emqx"。
 # CT511N 模块连接时，应该连接公网 IP：122.51.49.38:1883。
-MQTT_BROKER = "emqx"
+MQTT_BROKER = "1Panel-emqx-KfJW"
 MQTT_PORT = 1883
 
 # 模块/MCU 上传数据到这个 topic
