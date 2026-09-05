@@ -385,7 +385,7 @@ def show_web_page():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Baidu Map -->
-    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=wTifec4XNI4FQRvA9eabMK1EUuweIpba"></script>
+    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=JpneQqfPRHyL3sCl9gUzc2axO412HjSk"></script>
     
     <style>
         :root {
