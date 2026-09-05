@@ -12,19 +12,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
-
-      - name: Upload BMS Server
-        uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          port: 22
-
-          source: "*"
-          target: "/opt/1panel/whwkkj-web/bms-project/bms-server"
-          overwrite: true
-
+          fetch-depth: 2
 
       - name: Check requirements changes
         id: changes
@@ -34,6 +23,25 @@ jobs:
           else
             echo "requirements_changed=false" >> "$GITHUB_OUTPUT"
           fi
+
+
+      - name: Prepare Deploy Files
+        run: |
+          rm -rf .git
+          rm -rf .github
+
+
+      - name: Upload BMS Server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+
+          source: "."
+          target: "/opt/1panel/whwkkj-web/bms-project/bms-server"
+          overwrite: true
 
 
       - name: Install Dependencies
@@ -55,4 +63,5 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
           script: |
+            sudo docker restart bms-server
             sudo docker ps --filter "name=bms-server"
