@@ -17,7 +17,7 @@ import paho.mqtt.client as mqtt
 # 1. 本代码不再使用 HTTP POST 上传数据。
 # 2. 服务器上必须有 MQTT Broker，例如 Mosquitto。
 # 3. CT511N 模块要连接公网 Broker 地址：122.51.49.38:1883
-# 4. 本 FastAPI 程序如果和 Broker 在同一台服务器，MQTT_BROKER 用 10.0.0.3 即可。
+# 4. 本 FastAPI 程序与 EMQX 容器位于同一个 Docker 网络时，MQTT_BROKER 建议使用 EMQX 的容器名或网络别名，例如 "emqx"。
 # ============================================================
 
 # ----------------- 数据区 -----------------
@@ -40,9 +40,9 @@ latest_mqtt_status = {
 data_lock = threading.Lock()
 
 # ----------------- MQTT 配置 -----------------
-# FastAPI 和 MQTT Broker 在同一台云服务器时，用 10.0.0.3。
+# FastAPI 程序与 EMQX 容器位于同一个 Docker 网络时，MQTT_BROKER 建议使用 EMQX 的容器名或网络别名，例如 "emqx"。
 # CT511N 模块连接时，应该连接公网 IP：122.51.49.38:1883。
-MQTT_BROKER = "10.0.0.3"
+MQTT_BROKER = "emqx"
 MQTT_PORT = 1883
 
 # 模块/MCU 上传数据到这个 topic
